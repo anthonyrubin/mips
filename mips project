@@ -1,83 +1,103 @@
-.globl x
 .globl main
 .globl terminate
-.globl bkpt_1
-.globl bkpt_2
-.globl bkpt_3
+#.globl bkpt_1
+#.globl bkpt_2
+#.globl bkpt_3
+
 .data
+number1:  .asciiz "       " #number 1 should be stored here	# 0x10000000
+number2:  .asciiz "       " #number 2 should be stored here	# 0x10000008
+number3:  .asciiz "       " #number 3 should be stored here	# 0x10000010
+prompt1:  .asciiz "Enter first number:"				# 0x10000018
+prompt2:  .asciiz "Enter second number:"			# 0x1000002C
+prompt3:  .asciiz "Enter third number:"				# 0x10000041
 
-x:
-.word 0x01234567
-.word 0x89abcdef
 
-prompt1:  .asciiz   "Enter first number:"
-prompt2:  .asciiz "Enter second number:"
-prompt3:  .asciiz   "Enter third number: "
-number1:  .asciiz  "	  " #number 1 should be stored here
-number2:  .asciiz  "	  " #number 2 should be stored here
-number3:  .asciiz  "	  " #number 3 should be stored here
-
-#it is not clear how to store memory in the above memory locations (number1, number2, number3)
 .text
+	
 
 main:
         addi $v0, $0, 4
         lui $a0, 0x1000
+	ori $a0, $a0, 0x18
         syscall                # Prompt the user to enter first number (prompt1)
 
         addi $v0, $0, 8
+	lui $a0, 0x1000		
+	addi $a1, $0, 8
         syscall                # Get first null terminated string
-
-bkpt_2: add $t3, $0, $v0       # store first null term string in $a1
-
+         
+	# $a0 currently contains a pointer to the input string
+	# ValidateString takes $a0 as the input and output string
+	jal ValidateString	# call ValidateString to remove non number characters
+	               
         addi $v0, $0, 4
         lui $a0, 0x1000
-        addi $a0, $a0, 20
-        syscall                # Prompt the user to enter second number (prompt2)
+	ori $a0, $a0, 0x2C
+        syscall                # Prompt the user to enter first number (prompt2)
 
-        addi $v0, $0, 8        # Get second null terminated string
-        syscall
+        addi $v0, $0, 8
+	lui $a0, 0x1000	
+	ori $a0, $a0, 8	
+	addi $a1, $0, 8
+        syscall                # Get second null terminated string
 
-        add $a2, $0, $v0        #store second integer in register $a2
+	addi $v0, $0, 4
+	lui $a0, 0x1000
+	ori $a0, $a0, 0x41
+	syscall
 
-        addi $v0, $0, 4
-        lui $a0, 0x1000
-        addi $a0, $a0, 41
-        syscall                 #prompt the user to enter third number (prompt3)
-
-        addi $v0, $0, 8         #Get third null terminated string
-        syscall
-
-        add $a3, $0, $v0        #store the third integer in register $a3
-
-         addiu $t1, $t1, 44  #ascii vslue of a coma (,)
-        addiu $t2, $t2, 7  #the maximum amount of characteres that should be in a string (ex:999,999)
-
-        #loop and remove work to loop through the string and remove any comas
-        #I am in the process of getting this loop to work in -bare mode
-        #I lack comprehension of how to access the imput strings  and store in specific memory locations(number1, number2, number3)
-        #Once I figure that out I will be able to make the loop run as it should.
-
-        loop:
-	      #la $a1,number1
-        add $a1,$a1,$t0   # $a1 = $t0 at specific index.
-        lb $a0,($a1)	  # loads first byte from a1
-        lui $v0,11	#prints first byte
-        add $t0, $t0, 1   #adds 1 to counter $t0
-        beq $a0, $t1, removeComa   # if the value at the byte stored in $a0 is equal to the ascii vslue stored in t1, go to removeComa
-        #bge  $t0, 8, end
-        beq $a0, $zero, terminate
-        syscall
-        j loop
-	      removeComa:
-
-        add $a1, $a1, 1  #adds an extra one to our counter $t0
-        add $s7, $zero, 0
-
-        slt     $t0, $v0, 100
-        bne     $t0, $zero, loop
-
-
-
+	addi $v0, $0, 8
+	lui $a0, 0x1000
+	ori $a0, $a0, 10
+	addi $a1, $0, 8
+	syscall	
 
 terminate:	add $0, $0, $0         # Program terminated
+
+
+ValidateString:
+	addi	$s1, $0, '0'		# Load ascii 0 into s1
+	addi	$s2, $0, '9'		# Load ascci 9 into s2
+	add	$t0, $0, $a0		# Copy input string from $a0 into $t0
+	
+VSLoopTop:
+	lb	$t1, 0($t0)		# Load first character from $t0
+	beq 	$t1,$zero, VSDone		# Null Check
+
+
+	slt     $t7, $t1, $s1
+	bne     $t7, $zero, VSInnerLoop	
+	#blt	$t1, $s1, VSInnerLoop	# if character < '0' then do the inner loop
+	
+	slt     $t7, $s1, $t1
+	bne	$t7, $zero, VSInnerLoop
+	#bgt	$t1, $s2, VSInnerLoop	# if character > '9' then do the inner loop
+	
+	beq     $zero, $zero, VSNotNumeral
+	#b	VSNotNumeral		# otherwise, this is a valid number character, go to the next character
+	
+VSInnerLoop:
+	addi	$t2, $t0, 1		# $t2 = $t0 + 1, t2 points at the character after the invalid character
+VSInnerLoopTop:
+	lb	$t3, 0($t2)		# load the first character from $t2
+	beq	$t3,$zero, VSInnerLoopDone	# null check
+
+	sb	$t3, -1($t2)		# store the character in the previous byte overwriting what was previously there
+	addi	$t2, $t2, 1		# increment t2 to the next byte
+	
+	beq     $zero, $zero, VSInnerLoopTop
+	#b 	VSInnerLoopTop		# go back to the top of the inner loop
+
+VSInnerLoopDone:
+	sb	$0, -1($t2)		# store a null terminator at the end of the modified string
+
+VSNotNumeral:
+	addi	$t0, $t0, 1		# increment t0 to move to the next character in our string
+	
+
+	beq     $zero, $zero, VSLoopTop
+	#b	VSLoopTop		# go back to the top of the outer loop
+
+VSDone:
+	jr	$ra			# return
